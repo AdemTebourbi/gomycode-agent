@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Chat — Tools & Fallback</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    :root {
+      --bg:        #09090b;  --surface: #131316;  --card: #1a1a1f;
+      --border:    #27272a;  --border-lt:#3f3f46;
+      --text:      #fafafa;  --text-2:  #a1a1aa;  --text-3: #71717a;
+      --accent:    #8b5cf6;  --accent-2:#06b6d4;
+      --green:     #22c55e;  --orange:  #f97316;  --red: #ef4444;
+      --gradient:  linear-gradient(135deg, #8b5cf6, #06b6d4);
+      --radius:    12px;     --radius-sm:8px;
+      --font:      'Inter', system-ui, sans-serif;
+      --mono:      'JetBrains Mono', monospace;
+    }
+
+    html, body { height:100%; font-family:var(--font); background:var(--bg); color:var(--text); overflow:hidden; }
+    .app { display:flex; height:100vh; }
+
+    /* ── Sidebar ────────────────────────────────────────────── */
+    .sidebar {
+      width:290px; min-width:290px; background:var(--surface);
+      border-right:1px solid var(--border); display:flex; flex-direction:column;
+      padding:24px 20px; gap:28px; overflow-y:auto;
+    }
+    .sidebar-logo { display:flex; align-items:center; gap:12px; }
+    .sidebar-logo .icon-box {
+      width:40px; height:40px; border-radius:10px; background:var(--gradient);
+      display:grid; place-items:center; font-size:20px; color:#fff; flex-shrink:0;
+    }
+    .sidebar-logo h1 { font-size:17px; font-weight:600; }
+    .sidebar-logo p  { font-size:12px; color:var(--text-3); margin-top:2px; }
+    .sidebar-section h3 {
+      font-size:11px; text-transform:uppercase; letter-spacing:1.2px;
+      color:var(--text-3); margin-bottom:12px;
+    }
+    .test-btn {
+      display:flex; align-items:center; gap:10px; width:100%;
+      padding:10px 12px; background:var(--card); border:1px solid var(--border);
+      border-radius:var(--radius-sm); color:var(--text-2); font-size:13px;
+      font-family:var(--mono); cursor:pointer; transition:all .2s;
+      text-align:left; margin-bottom:8px;
+    }
+    .test-btn:hover { border-color:var(--accent); color:var(--text); background:rgba(139,92,246,.08); }
+    .test-btn .tag {
+      font-family:var(--font); font-size:10px; font-weight:600; padding:2px 7px;
+      border-radius:4px; text-transform:uppercase; letter-spacing:.5px; flex-shrink:0;
+    }
+    .tag-calc { background:rgba(34,197,94,.15); color:var(--green); }
+    .tag-srch { background:rgba(6,182,212,.15);  color:var(--accent-2); }
+    .tag-fail { background:rgba(249,115,22,.15); color:var(--orange); }
+    .tag-dir  { background:rgba(139,92,246,.15); color:var(--accent); }
+    .legend { display:flex; flex-direction:column; gap:8px; }
+    .legend-item { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--text-2); }
+    .legend-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .arch-diagram {
+      background:var(--card); border:1px solid var(--border); border-radius:var(--radius-sm);
+      padding:16px; font-family:var(--mono); font-size:11px; line-height:1.7;
+      color:var(--text-3); white-space:pre; overflow-x:auto;
+    }
+    .arch-diagram .kw { color:var(--accent); }
+    .arch-diagram .fn { color:var(--accent-2); }
+    .arch-diagram .ar { color:var(--orange); }
+
+    /* ── Health indicator ── */
+    .health-box {
+      display:flex; align-items:center; gap:8px; font-size:12px;
+      color:var(--text-3); padding:8px 10px; background:var(--card);
+      border:1px solid var(--border); border-radius:var(--radius-sm);
+    }
+    .health-dot { width:8px; height:8px; border-radius:50%; }
+    .health-ok  { background:var(--green); box-shadow:0 0 6px rgba(34,197,94,.4); }
+    .health-err { background:var(--red);   box-shadow:0 0 6px rgba(239,68,68,.4); }
+
+    /* ── Main ──────────────────────────────────────────────── */
+    .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+    .chat-header {
+      height:64px; border-bottom:1px solid var(--border); display:flex;
+      align-items:center; padding:0 28px; gap:14px; background:var(--surface); flex-shrink:0;
+    }
+    .chat-header .dot {
+      width:10px; height:10px; border-radius:50%; background:var(--green);
+      box-shadow:0 0 8px rgba(34,197,94,.4);
+    }
+    .chat-header h2 { font-size:15px; font-weight:600; }
+    .chat-header .subtitle { font-size:12px; color:var(--text-3); }
+
+    .messages {
+      flex:1; overflow-y:auto; padding:28px; display:flex;
+      flex-direction:column; gap:20px; scroll-behavior:smooth;
+    }
+    .messages::-webkit-scrollbar { width:6px; }
+    .messages::-webkit-scrollbar-track { background:transparent; }
+    .messages::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+    .empty-state {
+      flex:1; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:16px; color:var(--text-3);
+    }
+    .empty-state i { font-size:48px; opacity:.3; }
+    .empty-state p { font-size:14px; }
+
+    .msg { display:flex; gap:12px; max-width:760px; animation:msgIn .35s ease-out; }
+    @keyframes msgIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    .msg.user { align-self:flex-end; flex-direction:row-reverse; }
+    .msg.assistant { align-self:flex-start; }
+
+    .msg .avatar {
+      width:34px; height:34px; border-radius:10px; display:grid;
+      place-items:center; font-size:16px; flex-shrink:0;
+    }
+    .msg.user .avatar      { background:var(--gradient); color:#fff; }
+    .msg.assistant .avatar { background:var(--card); border:1px solid var(--border); color:var(--accent-2); }
+
+    .msg .bubble { padding:14px 18px; border-radius:var(--radius); font-size:14px; line-height:1.65; }
+    .msg.user .bubble { background:var(--gradient); color:#fff; border-bottom-right-radius:4px; }
+    .msg.assistant .bubble { background:var(--card); border:1px solid var(--border); color:var(--text); border-bottom-left-radius:4px; }
+
+    .route-badge {
+      display:inline-flex; align-items:center; gap:5px; font-size:11px;
+      font-weight:600; padding:3px 9px; border-radius:5px; margin-bottom:8px; letter-spacing:.3px;
+    }
+    .route-badge.tool     { background:rgba(34,197,94,.12);  color:var(--green); }
+    .route-badge.fallback { background:rgba(249,115,22,.12); color:var(--orange); }
+    .route-badge.direct   { background:rgba(139,92,246,.12); color:var(--accent); }
+    .route-badge i { font-size:13px; }
+
+    /* ── Debug panel ── */
+    .debug-toggle {
+      display:inline-flex; align-items:center; gap:4px; font-size:11px;
+      color:var(--text-3); cursor:pointer; margin-top:8px; user-select:none;
+      transition:color .2s;
+    }
+    .debug-toggle:hover { color:var(--text-2); }
+    .debug-panel {
+      margin-top:8px; padding:10px 12px; background:rgba(0,0,0,.3);
+      border:1px solid var(--border); border-radius:var(--radius-sm);
+      font-family:var(--mono); font-size:11px; line-height:1.8;
+      color:var(--text-3); display:none;
+    }
+    .debug-panel.open { display:block; }
+
+    .typing {
+      display:flex; gap:5px; padding:14px 18px; background:var(--card);
+      border:1px solid var(--border); border-radius:var(--radius);
+      border-bottom-left-radius:4px; width:fit-content;
+    }
+    .typing span {
+      width:7px; height:7px; border-radius:50%; background:var(--text-3);
+      animation:bounce 1.2s infinite;
+    }
+    .typing span:nth-child(2) { animation-delay:.2s; }
+    .typing span:nth-child(3) { animation-delay:.4s; }
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+
+    .input-bar {
+      padding:20px 28px; border-top:1px solid var(--border);
+      background:var(--surface); flex-shrink:0;
+    }
+    .input-wrap {
+      display:flex; gap:12px; align-items:center; background:var(--card);
+      border:1px solid var(--border); border-radius:var(--radius);
+      padding:6px 6px 6px 18px; transition:border-color .2s;
+    }
+    .input-wrap:focus-within { border-color:var(--accent); }
+    .input-wrap input {
+      flex:1; background:none; border:none; outline:none;
+      color:var(--text); font-size:14px; font-family:var(--font);
+    }
+    .input-wrap input::placeholder { color:var(--text-3); }
+    .send-btn {
+      width:40px; height:40px; border-radius:10px; border:none;
+      background:var(--gradient); color:#fff; font-size:18px;
+      cursor:pointer; display:grid; place-items:center;
+      transition:transform .15s,opacity .15s; flex-shrink:0;
+    }
+    .send-btn:hover  { transform:scale(1.05); }
+    .send-btn:active { transform:scale(.95); }
+    .send-btn:disabled { opacity:.4; cursor:default; transform:none; }
+
+    .error-msg {
+      color:var(--red); font-size:13px; padding:10px 14px;
+      background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.2);
+      border-radius:var(--radius-sm);
+    }
+
+    @media(max-width:768px) {
+      .sidebar { display:none; }
+      .messages { padding:20px 16px; }
+      .input-bar { padding:16px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="icon-box"><i class="ri-robot-2-line"></i></div>
+      <div><h1>Agent Chat</h1><p>Tools & Fallback · Ollama</p></div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Ollama Status</h3>
+      <div class="health-box" id="healthBox">
+        <div class="health-dot health-err" id="healthDot"></div>
+        <span id="healthText">Checking…</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Test Queries</h3>
+      <button class="test-btn" onclick="sendQuery('What is sqrt(144) + 5?')">
+        <span class="tag tag-calc">Calc</span> sqrt(144) + 5
+      </button>
+      <button class="test-btn" onclick="sendQuery('What is 12 * 8?')">
+        <span class="tag tag-calc">Calc</span> 12 * 8
+      </button>
+      <button class="test-btn" onclick="sendQuery('What is 2^10?')">
+        <span class="tag tag-calc">Calc</span> 2^10
+      </button>
+      <button class="test-btn" onclick="sendQuery('Tell me something about Tunisia')">
+        <span class="tag tag-srch">Search</span> Tunisia
+      </button>
+      <button class="test-btn" onclick="sendQuery('Search 404 test')">
+        <span class="tag tag-fail">Fail</span> Search 404 test
+      </button>
+      <button class="test-btn" onclick="sendQuery('Who are you?')">
+        <span class="tag tag-dir">Direct</span> Who are you?
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Route Legend</h3>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Tool — successful tool call</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> Fallback — tool failed, LLM rescue</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Direct — LLM only, no tool</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Agent Graph</h3>
+      <div class="arch-diagram"><span class="kw">START</span>
+  │
+  ▼
+<span class="fn">classify_input</span>
+  │
+  ├→ <span class="fn">execute_tool</span> ─┬→ <span class="fn">format_output</span> → <span class="kw">END</span>
+  │               │
+  │               └→ <span class="ar">llm_answer</span> → <span class="fn">format_output</span>
+  │
+  └→ <span class="ar">llm_answer</span> → <span class="fn">format_output</span> → <span class="kw">END</span></div>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <div class="main">
+    <header class="chat-header">
+      <div class="dot"></div>
+      <div>
+        <h2>LangGraph Agent</h2>
+        <span class="subtitle">Ollama · Calculator + Search · with fallback</span>
+      </div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <i class="ri-chat-3-line"></i>
+        <p>Send a message or click a test query to begin</p>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrap">
+        <input type="text" id="input" placeholder="Ask something…"
+          autocomplete="off" onkeydown="if(event.key==='Enter') sendMessage()">
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+          <i class="ri-arrow-right-line"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const messagesEl   = document.getElementById('messages');
+  const inputEl      = document.getElementById('input');
+  const sendBtnEl    = document.getElementById('sendBtn');
+  const emptyStateEl = document.getElementById('emptyState');
+  const healthDot    = document.getElementById('healthDot');
+  const healthText   = document.getElementById('healthText');
+
+  /* ── Health check ─────────────────────────────────────── */
+  async function checkHealth() {
+    try {
+      const res = await fetch('/health');
+      const data = await res.json();
+      if (data.status === 'ok') {
+        healthDot.className = 'health-dot health-ok';
+        healthText.textContent = 'Ollama OK · ' + data.models.join(', ');
+      } else {
+        healthDot.className = 'health-dot health-err';
+        healthText.textContent = 'Ollama error';
+      }
+    } catch {
+      healthDot.className = 'health-dot health-err';
+      healthText.textContent = 'Server unreachable';
+    }
+  }
+  checkHealth();
+
+  /* ── Helpers ──────────────────────────────────────────── */
+  function scrollBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+  function removeEmpty()  { if (emptyStateEl) emptyStateEl.remove(); }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function addUserBubble(text) {
+    removeEmpty();
+    const div = document.createElement('div');
+    div.className = 'msg user';
+    div.innerHTML = `
+      <div class="avatar"><i class="ri-user-3-line"></i></div>
+      <div class="bubble">${escapeHtml(text)}</div>`;
+    messagesEl.appendChild(div);
+    scrollBottom();
+  }
+
+  function addAssistantBubble(text, route, tool, debugLines) {
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+
+    let badge = '';
+    if (route === 'tool') {
+      const icon = tool === 'calculator' ? 'ri-calculator-line' : 'ri-search-line';
+      const label = tool ? tool.charAt(0).toUpperCase() + tool.slice(1) : 'Tool';
+      badge = `<div class="route-badge tool"><i class="${icon}"></i> ${label}</div>`;
+    } else if (route === 'fallback') {
+      badge = `<div class="route-badge fallback"><i class="ri-alert-line"></i> Fallback</div>`;
+    } else {
+      badge = `<div class="route-badge direct"><i class="ri-chat-1-line"></i> Direct</div>`;
+    }
+
+    /* Debug section */
+    const debugId = 'dbg-' + Date.now();
+    let debugHtml = '';
+    if (debugLines && debugLines.length) {
+      debugHtml = `
+        <div class="debug-toggle" onclick="document.getElementById('${debugId}').classList.toggle('open')">
+          <i class="ri-bug-line"></i> Debug trace
+        </div>
+        <div class="debug-panel" id="${debugId}">
+          ${debugLines.map(l => escapeHtml(l)).join('<br>')}
+        </div>`;
+    }
+
+    div.innerHTML = `
+      <div class="avatar"><i class="ri-robot-2-line"></i></div>
+      <div class="bubble">${badge}${escapeHtml(text)}${debugHtml}</div>`;
+    messagesEl.appendChild(div);
+    scrollBottom();
+  }
+
+  function addTypingIndicator() {
+    removeEmpty();
+    const div = document.createElement('div');
+    div.className = 'msg assistant'; div.id = 'typing';
+    div.innerHTML = `
+      <div class="avatar"><i class="ri-robot-2-line"></i></div>
+      <div class="typing"><span></span><span></span><span></span></div>`;
+    messagesEl.appendChild(div);
+    scrollBottom();
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typing');
+    if (el) el.remove();
+  }
+
+  function addErrorBubble(text) {
+    const div = document.createElement('div');
+    div.className = 'msg assistant';
+    div.innerHTML = `
+      <div class="avatar"><i class="ri-robot-2-line"></i></div>
+      <div class="bubble"><div class="error-msg"><i class="ri-error-warning-line"></i> ${escapeHtml(text)}</div></div>`;
+    messagesEl.appendChild(div);
+    scrollBottom();
+  }
+
+  /* ── Send ──────────────────────────────────────────────── */
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    sendBtnEl.disabled = true;
+    addUserBubble(text);
+    addTypingIndicator();
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+      const data = await res.json();
+      removeTypingIndicator();
+      if (data.error) addErrorBubble(data.error);
+      else addAssistantBubble(data.answer, data.route, data.tool, data.debug || []);
+    } catch (err) {
+      removeTypingIndicator();
+      addErrorBubble('Network error — is the Flask server running?');
+    }
+
+    sendBtnEl.disabled = false;
+    inputEl.focus();
+  }
+
+  function sendQuery(text) { inputEl.value = text; sendMessage(); }
+  inputEl.focus();
+</script>
+</body>
+</html>
